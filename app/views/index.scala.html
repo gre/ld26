@@ -5,6 +5,13 @@
   <canvas id="viewport"></canvas>
 </div>
 
+<div id="audios" style="display: none">
+  <audio id="music" preload>
+    <source src="@routes.Assets.at("musics/main.ogg")" type="audio/ogg"></source>
+    <source src="@routes.Assets.at("musics/main.mp3")" type="audio/mpeg"></source>
+  </audio>
+</div>
+
 <script type="text/javascript" src="@routes.Assets.at("javascripts/rAF.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/main.js")"></script>
 }
