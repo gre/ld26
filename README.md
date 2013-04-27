@@ -35,9 +35,9 @@ Target
 ROADMAP
 =======
 
-* [ ] Bootstrap client-side (viewport, bootstrap classes, update/render loop)
-* [ ] Make basic designs
-* [ ] Make basic move
+* [x] Bootstrap client-side (viewport, bootstrap classes, update/render loop)
+* [x] Make basic designs
+* [x] Make basic move
  
 Bootstrap Server-side & Client-side:
 ------

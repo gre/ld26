@@ -1,4 +1,4 @@
-@()
+@()(implicit request: RequestHeader)
 
 @main {
 <div id="game">
@@ -12,6 +12,15 @@
   </audio>
 </div>
 
+<script type="text/javascript">
+  WEBSOCKET_URL = "@routes.Application.socket("USERNAME").webSocketURL()";
+</script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/lodash.min.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/q.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/rAF.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/network.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/player.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/camera.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/game.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/main.js")"></script>
 }
