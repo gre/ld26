@@ -57,6 +57,7 @@ object Game {
 case class RealPosition (x: Double, y: Double) {
   def toPosition() = Position(math.floor(x).toInt, math.floor(y).toInt)
 }
+
 object RealPosition {
   implicit val format = Json.format[RealPosition]
 }
@@ -74,38 +75,36 @@ class Player (username: String, var position: Position, game: ActorRef, channel:
 
   def receive = {
 
-    case UserMessage(username, kind, msg) => {
-      println(kind)
-      (kind, msg) match {
-        case ("ready", _) =>
-          self ! InitPlayer(100, 100)
+    case m @ UserMessage(username, kind, msg) => {
+      kind match {
+        case "move" => 
+          Json.fromJson[Position](msg) map { position =>
+            self ! Move(position)
+          }
 
-        case ("move", pos: Position) => 
-          println("move", pos)
-          self ! Move(pos.x, pos.y)
+        case "subscribe_chunk" =>
+          Json.fromJson[Position](msg) map { position =>
+            game ! SubscribeChunk(self, position)
+          }
 
-        case ("subscribe_chunk", JsObject(pos)) =>
-          ((msg\"x").asOpt[Long], (msg\"y").asOpt[Long]) match { case (Some(x), Some(y)) =>
-            game ! SubscribeChunk(self, Position(x,y))
-        }
+        case "unsubscribe_chunk" =>
+          Json.fromJson[Position](msg) map { position =>
+            game ! UnsubscribeChunk(self, position)
+          }
 
-        case ("unsubscribe_chunk", pos : Position) =>
-            game ! UnsubscribeChunk(self, pos)
-
-        case ("hit_block", JsObject(pos)) => {
-
-        }
+        case _ =>
+          Logger.debug("unsupported: "+m)
       }
     }
 
-    case InitPlayer(x, y) => {
-      this.position = Position(x, y)
-      game ! NewPosition(username, x, y)
+    case InitPlayer(position) => {
+      this.position = position
+      game ! NewPosition(username, position)
     }
-    case Move(x, y) => {
-      println(username, "move", x, y)
-      this.position = Position(x, y)
-      game ! NewPosition(username, x, y)
+
+    case Move(p) => {
+      this.position = p
+      game ! NewPosition(username, p)
     }
   }
 }
@@ -242,18 +241,15 @@ class Game extends Actor {
       sender ! chunk
     }
 
-    case NewPosition(username: String, x: Long, y: Long) => {
-      notifyAll("position", username, Json.obj("x" -> JsNumber(x), "y" -> JsNumber(y)))
-    }
+    case NewPosition(username, position) =>
+      notifyAll("position", username, Json.toJson(position))
 
-    case NotifyJoin(username) => {
+    case NotifyJoin(username) =>
       notifyAll("join", username, JsString(username))
-    }
     
-    case Quit(username) => {
+    case Quit(username) => 
       members = members - username
       notifyAll("quit", username, JsString(username))
-    }
     
   }
   
@@ -272,10 +268,9 @@ class Game extends Actor {
 
 case class UserMessage (username: String, kind: String, msg: JsValue)
 
-case class InitPlayer (x: Long, y: Long)
-case class Move (x: Long, y: Long)
-case class NewPosition (username: String, x: Long, y: Long)
-
+case class InitPlayer (position: Position)
+case class Move (position: Position)
+case class NewPosition (username: String, position: Position)
 case class Join(username: String)
 case class Quit(username: String)
 case class NotifyJoin(username: String)
