@@ -6,6 +6,7 @@
   var username = /*prompt("What is your username?") ||*/ "p"+Math.random().toFixed(2).substring(2);
   var player = new Player(username);
   var camera = new Camera();
+  camera.track(player);
 
   new Game(player).start().then(function (game) {
 
@@ -17,6 +18,7 @@
       var delta = now - lastT;
       var time = now - startT;
       lastT = now;
+      camera.update(time, delta);
       game.update(time, delta);
     }
 

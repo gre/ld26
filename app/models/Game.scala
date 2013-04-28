@@ -1,7 +1,7 @@
 package models
 
 import akka.actor._
-import scala.concurrent._
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 import play.api.Logger
@@ -28,7 +28,7 @@ object Game {
 
     (default ? Join(username)).map {
       
-      case Connected(prependEnumerator, enumerator) => 
+      case Connected(enumerator) => 
         val iteratee = Iteratee.foreach[JsValue] { event =>
           event match {
             case JsArray(events) => events.map { e =>
@@ -41,7 +41,7 @@ object Game {
           default ! Quit(username)
         }
 
-        (iteratee, prependEnumerator >>> enumerator)
+        (iteratee, enumerator)
         
       case CannotConnect(error) => 
         val iteratee = Done[JsValue,Unit]((),Input.EOF)
@@ -54,46 +54,152 @@ object Game {
   
 }
 
-class Player (username: String) extends Actor {
-  var x = 0L
-  var y = 0L
+case class RealPosition (x: Double, y: Double) {
+  def toPosition() = Position(math.floor(x).toInt, math.floor(y).toInt)
+}
+object RealPosition {
+  implicit val format = Json.format[RealPosition]
+}
+
+
+case class Position (x: Long, y: Long) {
+  def + (p: Position) = Position(x+p.x, y+p.y)
+}
+
+object Position {
+  implicit val format = Json.format[Position]
+}
+
+class Player (username: String, var position: Position, game: ActorRef, channel: Concurrent.Channel[JsValue]) extends Actor {
 
   def receive = {
+
+    case UserMessage(username, kind, msg) => {
+      println(kind)
+      (kind, msg) match {
+        case ("ready", _) =>
+          self ! InitPlayer(100, 100)
+
+        case ("move", pos: Position) => 
+          println("move", pos)
+          self ! Move(pos.x, pos.y)
+
+        case ("subscribe_chunk", JsObject(pos)) =>
+          ((msg\"x").asOpt[Long], (msg\"y").asOpt[Long]) match { case (Some(x), Some(y)) =>
+            game ! SubscribeChunk(self, Position(x,y))
+        }
+
+        case ("unsubscribe_chunk", pos : Position) =>
+            game ! UnsubscribeChunk(self, pos)
+
+        case ("hit_block", JsObject(pos)) => {
+
+        }
+      }
+    }
+
     case InitPlayer(x, y) => {
-      this.x = x
-      this.y = y
-      sender ! NewPosition(username, x, y)
+      this.position = Position(x, y)
+      game ! NewPosition(username, x, y)
     }
     case Move(x, y) => {
       println(username, "move", x, y)
-      this.x = x
-      this.y = y
-      sender ! NewPosition(username, x, y)
+      this.position = Position(x, y)
+      game ! NewPosition(username, x, y)
     }
   }
 }
 
+object Chunk {
+  val SIZE = 512L
+}
+
+class Seed (value: Long) {
+  def getSpawnPosition (): Position = {
+    Position(100, 100)
+  }
+}
+
+sealed abstract class Tile(p: Position)
+case class EmptyBlock(p: Position) extends Tile(p)
+case class Block(p: Position, force: Long) extends Tile(p)
+
+object EmptyBlock {
+  implicit val format = Json.format[EmptyBlock]
+}
+object Block {
+  implicit val format = Json.format[Block]
+}
+
+class Chunk (origin: Position, gameRef: ActorRef) extends Actor {
+  var subscribers = Set.empty[ActorRef]
+  var tiles = Set.empty[Tile]
+
+  def inside (p: Position) = {
+    origin.x <= p.x && origin.y <= p.y && p.x < origin.x + Chunk.SIZE && p.y < origin.y + Chunk.SIZE;
+  }
+
+  def spawnTiles (p: Position) = List[Tile](
+    EmptyBlock(p + Position(-1, -1)),
+    EmptyBlock(p + Position(-1,  0)),
+    EmptyBlock(p + Position(-1,  1)),
+    EmptyBlock(p + Position( 0, -1)),
+    EmptyBlock(p + Position( 0,  0)),
+    EmptyBlock(p + Position( 0,  1)),
+    EmptyBlock(p + Position( 1, -1)),
+    EmptyBlock(p + Position( 1,  0)),
+    EmptyBlock(p + Position( 1,  1))
+  )
+
+  def receive = {
+    case InitChunk(seed) =>
+      val spawn = seed.getSpawnPosition()
+      if (inside(spawn)) {
+        tiles = tiles ++ spawnTiles(spawn)
+      }
+    
+    case SubscribeChunk(actor, _) =>
+      subscribers = subscribers + actor
+    
+    case UnsubscribeChunk(actor, _) =>
+      subscribers = subscribers - actor
+  }
+}
+
+case class SubscribeChunk (actor: ActorRef, p: Position)
+case class UnsubscribeChunk (actor: ActorRef, p: Position)
+
+case class InitChunk (seed: Seed)
+
+case class GetChunk(position: Position)
 
 class Game extends Actor {
+  implicit val timeout = Timeout(1 second)
   
   var members = Map.empty[String, ActorRef]
+  var chunks = Map.empty[Position, ActorRef]
+
   val (gameEnumerator, gameChannel) = Concurrent.broadcast[JsValue]
+
+  val seed = new Seed(0L)
 
   def receive = {
     
-    case UserMessage(username, kind, msg) => {
-      var player = members(username)
-      (kind, msg) match {
-        case ("ready", _) =>
-          player ! InitPlayer(100, 100)
+    case m @ UserMessage(username, kind, msg) => {
+      members.get(username).map { player =>
+        player ! m
+      }
+    }
 
-        case ("move", JsObject(pos)) => 
-          ((msg\"x").asOpt[Long], (msg\"y").asOpt[Long]) match { case (Some(x), Some(y)) =>
-          player ! Move(x, y)
-        }
+    case s @ SubscribeChunk(_, p) => {
+      (self ? GetChunk(p)) map { case chunk: ActorRef =>
+        chunk ! s
+      }
+    }
 
-        case _ => {
-        }
+    case s @ UnsubscribeChunk(_, p) => {
+      (self ? GetChunk(p)) map { case chunk: ActorRef =>
+        chunk ! s
       }
     }
 
@@ -101,15 +207,39 @@ class Game extends Actor {
       if(members.contains(username)) {
         sender ! CannotConnect("username_exists")
       } else {
-        val player = Akka.system.actorOf(Props(new Player(username)))
-        members = members + (username -> player)
+        val position = seed.getSpawnPosition()
+        val playerEnumerator = Concurrent.unicast[JsValue] { playerChannel =>
+          val player = Akka.system.actorOf(Props(new Player(username, position, self, playerChannel)))
+          members = members + (username -> player)
+        }
         val gameInfosEnumerator: Enumerator[JsValue] = Enumerator(Json.obj(
           "k" -> "init",
-          "m" -> Json.obj("players" -> Json.arr())
+          "m" -> Json.obj(
+            "position" -> position,
+            "players" -> Json.arr()
+          )
         ))
-        sender ! Connected(gameInfosEnumerator, gameEnumerator)
+        sender ! Connected(
+          gameInfosEnumerator >>>  
+          playerEnumerator >-
+          gameEnumerator)
         self ! NotifyJoin(username)
       }
+    }
+
+    case GetChunk (p) => {
+      val chunkPosition = Position(p.x % Chunk.SIZE, p.y % Chunk.SIZE)
+      val chunk =
+        if (chunks contains chunkPosition)
+          chunks(chunkPosition)
+        else {
+          val chunk = Akka.system.actorOf(Props(new Chunk(chunkPosition, self)))
+          (chunk ? InitChunk(seed)) map { case _ =>
+            chunks = chunks + (chunkPosition -> chunk)
+          }
+          chunk
+        }
+      sender ! chunk
     }
 
     case NewPosition(username: String, x: Long, y: Long) => {
@@ -150,5 +280,5 @@ case class Join(username: String)
 case class Quit(username: String)
 case class NotifyJoin(username: String)
 
-case class Connected(prependEnumerator: Enumerator[JsValue], enumerator:Enumerator[JsValue])
+case class Connected(enumerator:Enumerator[JsValue])
 case class CannotConnect(msg: String)

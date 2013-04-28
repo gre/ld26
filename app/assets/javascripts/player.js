@@ -1,6 +1,6 @@
 function Player (name) {
   this.name = name;
-  this.color = "white";
+  this.color = "red";
   this.x = 0;
   this.y = 0;
   this.moving = false;
@@ -22,8 +22,9 @@ Player.prototype = {
     }
   },
   render: function (ctx, camera) {
-    var playerSize = camera.tileSize()*0.8;
+    var playerSize = .8;
     ctx.save();
+    camera.applyContext(ctx);
     ctx.fillStyle = this.color;
     ctx.fillRect(
       this.x-playerSize/2,

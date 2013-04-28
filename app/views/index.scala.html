@@ -6,7 +6,7 @@
 </div>
 
 <div id="audios" style="display: none">
-  <audio id="music" preload>
+  <audio id="music" preload loop autoplay>
     <source src="@routes.Assets.at("musics/main.ogg")" type="audio/ogg"></source>
     <source src="@routes.Assets.at("musics/main.mp3")" type="audio/mpeg"></source>
   </audio>
@@ -14,10 +14,12 @@
 
 <script type="text/javascript">
   WEBSOCKET_URL = "@routes.Application.socket("USERNAME").webSocketURL()";
+  CHUNK_SIZE = @models.Chunk.SIZE;
 </script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lodash.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/q.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/rAF.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/utils.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/network.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/player.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/camera.js")"></script>

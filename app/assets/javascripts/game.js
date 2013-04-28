@@ -2,6 +2,8 @@
 function Game (player) {
   this.player = player;
   this.players = {};
+  this.chunks = [];
+  this.subscriptions = [];
 }
 
 Game.prototype = {
@@ -11,6 +13,26 @@ Game.prototype = {
       network.send("ready");
       return this;
     }, this));
+  },
+
+  chunkForPosition: function (p) {
+    return new Vec2(p.x % CHUNK_SIZE, p.y % CHUNK_SIZE);
+  },
+
+  syncChunkSubscription: function () {
+    var currentChunk = this.chunkForPosition(this.player.x, this.player.y);
+    this.network.send("subscribe_chunk", currentChunk);
+  },
+
+  handles: {
+    join: function () {},
+    init: function (args) {
+      this.player.syncPosition(args.position.x, args.position.y);
+      this.syncChunkSubscription();
+    },
+    position: function (p, username) {
+      this.playerByName(username).syncPosition(p.x, p.y);
+    }
   },
 
   stopPlayer: function () {
@@ -29,13 +51,12 @@ Game.prototype = {
   },
 
   onServerMessage: function (kind, msg, username) {
-    switch (kind) {
-      case "init":
-        console.log("TODO: init", msg);
-        break;
-      case "position":
-        this.playerByName(username).syncPosition(msg.x, msg.y);
-        break;
+    var handle = this.handles[kind];
+    if (handle) {
+      handle.call(this, msg, username);
+    }
+    else {
+      console.log("unsupported: ", arguments);
     }
   },
 
@@ -52,6 +73,10 @@ Game.prototype = {
     ctx.save();
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, w, h);
+    camera.applyContext(ctx);
+    console.log(this.tiles);
+    _.each(this.tiles, function (tile) {
+    });
     ctx.restore();
     this.player.render(ctx, camera);
   }
