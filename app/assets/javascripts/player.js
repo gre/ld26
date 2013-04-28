@@ -1,41 +1,47 @@
 function Player (name, color) {
   this.name = name;
   this.color = color || "red";
-  this.x = 0;
-  this.y = 0;
-  this.moving = false;
-  this.angle = 0;
+  this.color2 = color || Color.darker(this.color, 0.8);
+  this.position = null;
+  this.score = 0;
 }
 
+var GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
 Player.prototype = {
-  move: function (angle) {
-    this.moving = true;
-    this.angle = angle;
+  move: function (position) {
+    this.position = position;
   },
-  stop: function () {
-    this.moving = false;
+  size: function () {
+    return window.innerHeight * CIRCLE_DIST;
   },
-  update: function (time, delta) {
-    if (this.moving) {
-      this.x += Math.cos(this.angle) * delta * 0.01;
-      this.y += Math.sin(this.angle) * delta * 0.01;
-    }
-  },
-  render: function (ctx, camera) {
-    var playerSize = .8;
+  render: function (ctx) {
+    if (!this.position) return;
+    var x = this.position.x * window.innerWidth;
+    var y = this.position.y * window.innerHeight;
     ctx.save();
-    camera.applyContext(ctx);
+    var size = this.size();
+    ctx.beginPath();
     ctx.fillStyle = this.color;
-    ctx.fillRect(
-      this.x-playerSize/2,
-      this.y-playerSize/2,
-      playerSize,
-      playerSize
-    );
+    ctx.arc(x, y, size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = size * 0.1;
+    ctx.arc(x, y, size, 0, Math.PI*2);
+    ctx.stroke();
+
+    var scoreSize = size * 0.1;
+    ctx.fillStyle = "#000";
+    for (var s=1; s<=this.score; ++s) {
+      var a = s * GOLDEN_ANGLE;
+      var r = Math.sqrt(s/this.score)*size*0.8;
+      var delta = new Vec2( Math.cos(a)*r, Math.sin(a)*r );
+      ctx.beginPath();
+      ctx.arc(x+delta.x, y+delta.y, scoreSize, 0, Math.PI*2);
+      ctx.fill();
+    }
+
     ctx.restore();
-  },
-  syncPosition: function (x, y) {
-    this.x = x;
-    this.y = y;
   }
 };

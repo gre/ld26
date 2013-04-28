@@ -9,6 +9,7 @@ import play.api._
 import play.api.libs.json._
 import play.api.libs.iteratee._
 import play.api.libs.concurrent._
+import play.api.libs.functional.syntax._
 
 import akka.util.Timeout
 import akka.pattern.ask
@@ -17,12 +18,13 @@ import play.api.Play.current
 import play.api.libs.concurrent.Execution.Implicits._
 
 object Game {
+  val TOUCH_INTERVAL = 2000
+  val CIRCLE_DIST = 0.05
+  val CIRCLE_DIST2 = CIRCLE_DIST * CIRCLE_DIST
+
   implicit val timeout = Timeout(1 second)
-  
-  val default = {
-    val gameActor = Akka.system.actorOf(Props[Game])
-    gameActor
-  }
+
+  val default = Akka.system.actorOf(Props[Game])
 
   def join(username:String): Future[(Iteratee[JsValue,_],Enumerator[JsValue])] = {
 
@@ -30,6 +32,7 @@ object Game {
       
       case Connected(enumerator) => 
         val iteratee = Iteratee.foreach[JsValue] { event =>
+
           default ! UserMessage(username, (event \ "k").as[String], event \ "m")
         }.mapDone { _ =>
           default ! Quit(username)
@@ -48,142 +51,72 @@ object Game {
   
 }
 
-case class RealPosition (x: Double, y: Double) {
-  def toPosition() = Position(math.floor(x).toInt, math.floor(y).toInt)
-}
-
-object RealPosition {
-  implicit val format = Json.format[RealPosition]
-}
-
-
-case class Position (x: Long, y: Long) {
+case class Position (x: Double, y: Double) {
   def + (p: Position) = Position(x+p.x, y+p.y)
+  def dist2 (p: Position) = {
+    val dx = p.x - x
+    val dy = p.y - y
+    dx*dx+dy*dy
+  }
 }
 
 object Position {
   implicit val format = Json.format[Position]
 }
 
-class Player (username: String, var position: Position, game: ActorRef, channel: Concurrent.Channel[JsValue]) extends Actor {
+
+case class PlayerData (position: Position, score: Long, lastTouch: Long)
+
+object PlayerData {
+  implicit val format = Json.format[PlayerData]
+}
+
+class Player (
+  username: String, 
+  var position: Position, 
+  game: ActorRef, 
+  channel: Concurrent.Channel[JsValue]) extends Actor {
+
+  var score = 0L
+  var lastTouch = 0L
+
+  def getPlayerData = 
+    PlayerData(position, score, lastTouch)
 
   def receive = {
 
-    case "getPosition" => {
-      sender ! position
-    }
+    case "getData" =>
+      sender ! getPlayerData
 
-    case m @ UserMessage(username, kind, msg) => {
-      kind match {
-        case "move" => 
-          Json.fromJson[Position](msg) map { position =>
-            self ! Move(position)
-          }
+    case "score" =>
+      score = score + 1
+      game ! NewPlayerData(username, getPlayerData)
 
-        case "subscribe_chunk" =>
-          Json.fromJson[Position](msg) map { position =>
-            game ! SubscribeChunk(self, position)
-          }
+    case "touched" =>
+      score = math.max(0, score - 1)
+      lastTouch = System.currentTimeMillis()
+      game ! Touched(username)
+      game ! NewPlayerData(username, getPlayerData)
 
-        case "unsubscribe_chunk" =>
-          Json.fromJson[Position](msg) map { position =>
-            game ! UnsubscribeChunk(self, position)
-          }
-
-        case _ =>
-          Logger.debug("unsupported: "+m)
-      }
-    }
-
-    case InitPlayer(position) => {
+    case Move(position) => {
       this.position = position
-      game ! NewPosition(username, position)
+      game ! NewPlayerData(username, getPlayerData)
     }
 
-    case Move(p) => {
-      this.position = p
-      game ! NewPosition(username, p)
-    }
   }
 }
-
-object Chunk {
-  val SIZE = 512L
-}
-
-class Seed (value: Long) {
-  def getSpawnPosition (): Position = {
-    Position(100, 100)
-  }
-}
-
-sealed abstract class Tile(p: Position)
-case class EmptyBlock(p: Position) extends Tile(p)
-case class Block(p: Position, force: Long) extends Tile(p)
-
-object EmptyBlock {
-  implicit val format = Json.format[EmptyBlock]
-}
-object Block {
-  implicit val format = Json.format[Block]
-}
-
-class Chunk (origin: Position, gameRef: ActorRef) extends Actor {
-  var subscribers = Set.empty[ActorRef]
-  var tiles = Set.empty[Tile]
-
-  def inside (p: Position) = {
-    origin.x <= p.x && origin.y <= p.y && p.x < origin.x + Chunk.SIZE && p.y < origin.y + Chunk.SIZE;
-  }
-
-  def spawnTiles (p: Position) = List[Tile](
-    EmptyBlock(p + Position(-1, -1)),
-    EmptyBlock(p + Position(-1,  0)),
-    EmptyBlock(p + Position(-1,  1)),
-    EmptyBlock(p + Position( 0, -1)),
-    EmptyBlock(p + Position( 0,  0)),
-    EmptyBlock(p + Position( 0,  1)),
-    EmptyBlock(p + Position( 1, -1)),
-    EmptyBlock(p + Position( 1,  0)),
-    EmptyBlock(p + Position( 1,  1))
-  )
-
-  def receive = {
-    case InitChunk(seed) =>
-      val spawn = seed.getSpawnPosition()
-      if (inside(spawn)) {
-        tiles = tiles ++ spawnTiles(spawn)
-      }
-    
-    case SubscribeChunk(actor, _) =>
-      subscribers = subscribers + actor
-    
-    case UnsubscribeChunk(actor, _) =>
-      subscribers = subscribers - actor
-  }
-}
-
-case class SubscribeChunk (actor: ActorRef, p: Position)
-case class UnsubscribeChunk (actor: ActorRef, p: Position)
-
-case class InitChunk (seed: Seed)
-
-case class GetChunk(position: Position)
 
 class Game extends Actor {
   implicit val timeout = Timeout(1 second)
   
   var members = Map.empty[String, ActorRef]
-  var chunks = Map.empty[Position, ActorRef]
 
   val (gameEnumerator, gameChannel) = Concurrent.broadcast[JsValue]
 
-  val seed = new Seed(0L)
-
-  def playerInfos: Future[Map[String, JsValue]] = {
+  def playerInfos: Future[Map[String, PlayerData]] = {
     Future.sequence(members.toList map { case (username, actor) =>
-      (actor ? "getPosition") map { case position: Position =>
-        (username, Json.toJson(position))
+      (actor ? "getData") map { case playerData: PlayerData =>
+        (username, playerData)
       }
     }).map(_.toMap)
   }
@@ -192,19 +125,31 @@ class Game extends Actor {
     
     case m @ UserMessage(username, kind, msg) => {
       members.get(username).map { player =>
-        player ! m
-      }
-    }
+        kind match {
 
-    case s @ SubscribeChunk(_, p) => {
-      (self ? GetChunk(p)) map { case chunk: ActorRef =>
-        chunk ! s
-      }
-    }
+          case "move" => 
+            Json.fromJson[Position](msg) map { case position =>
+              player ! Move(position)
+            }
 
-    case s @ UnsubscribeChunk(_, p) => {
-      (self ? GetChunk(p)) map { case chunk: ActorRef =>
-        chunk ! s
+          case "touch" =>
+            Json.fromJson[String](msg) map { case victim =>
+              members.get(victim) map { other =>
+                (other ? "getData") map { case otherData: PlayerData =>
+                  (player ? "getData") map { case playerData: PlayerData =>
+                    if (otherData.lastTouch < System.currentTimeMillis() - Game.TOUCH_INTERVAL
+                      && otherData.position.dist2(playerData.position) < Game.CIRCLE_DIST2) {
+                      other ! "touched"
+                      player ! "score"
+                    }
+                  }
+                }
+              }
+            }
+
+          case _ =>
+            Logger.debug("unsupported: "+m)
+        }
       }
     }
 
@@ -212,49 +157,37 @@ class Game extends Actor {
       if(members.contains(username)) {
         sender ! CannotConnect("username_exists")
       } else {
-        val position = seed.getSpawnPosition()
         val gameInfosEnumerator: Enumerator[JsValue] = 
           Enumerator.flatten(playerInfos map { playerInfos => 
             Enumerator(Json.obj(
               "k" -> "init",
               "m" -> Json.obj(
-                "position" -> position,
                 "players" -> playerInfos
               )
             ))
           })
         val playerEnumerator = Concurrent.unicast[JsValue] { playerChannel =>
-          val player = Akka.system.actorOf(Props(new Player(username, position, self, playerChannel)))
+          val player = Akka.system.actorOf(Props(new Player(username, Position(-1.0, -1.0), self, playerChannel)))
           members = members + (username -> player)
+          (player ? "getData") map { case data: PlayerData =>
+            self ! NotifyJoin(username, data)
+          }
         }
         sender ! Connected(
           gameInfosEnumerator >>>  
           playerEnumerator >-
           gameEnumerator)
-        self ! NotifyJoin(username, position)
       }
     }
 
-    case GetChunk (p) => {
-      val chunkPosition = Position(p.x % Chunk.SIZE, p.y % Chunk.SIZE)
-      val chunk =
-        if (chunks contains chunkPosition)
-          chunks(chunkPosition)
-        else {
-          val chunk = Akka.system.actorOf(Props(new Chunk(chunkPosition, self)))
-          (chunk ? InitChunk(seed)) map { case _ =>
-            chunks = chunks + (chunkPosition -> chunk)
-          }
-          chunk
-        }
-      sender ! chunk
-    }
+    case Touched(username) =>
+      notifyAll("touched", username, JsString(username))
 
-    case NewPosition(username, position) =>
-      notifyAll("position", username, Json.toJson(position))
+    case NewPlayerData(username, data) =>
+      notifyAll("player", username, Json.toJson(data))
 
-    case NotifyJoin(username, position) =>
-      notifyAll("join", username, Json.toJson(position))
+    case NotifyJoin(username, data) =>
+      notifyAll("join", username, Json.toJson(data))
     
     case Quit(username) => 
       members = members - username
@@ -263,12 +196,10 @@ class Game extends Actor {
   }
   
   def notifyAll(kind: String, user: String, message: JsValue) {
-    val msg = JsObject(
-      Seq(
-        "k" -> JsString(kind),
-        "u" -> JsString(user),
-        "m" -> message
-      )
+    val msg = Json.obj(
+      "k" -> JsString(kind),
+      "u" -> JsString(user),
+      "m" -> message
     )
     gameChannel.push(msg)
   }
@@ -277,12 +208,12 @@ class Game extends Actor {
 
 case class UserMessage (username: String, kind: String, msg: JsValue)
 
-case class InitPlayer (position: Position)
 case class Move (position: Position)
-case class NewPosition (username: String, position: Position)
+case class NewPlayerData (username: String, playerData: PlayerData)
+case class Touched(username: String)
 case class Join(username: String)
 case class Quit(username: String)
-case class NotifyJoin(username: String, position: Position)
+case class NotifyJoin(username: String, playerData: PlayerData)
 
 case class Connected(enumerator:Enumerator[JsValue])
 case class CannotConnect(msg: String)

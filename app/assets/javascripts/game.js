@@ -2,77 +2,50 @@
 function Game (player) {
   this.player = player;
   this.players = {};
-  this.chunks = [];
-  this.subscriptions = [];
 }
 
 Game.prototype = {
   start: function () {
     this.network = new Network(WEBSOCKET_URL.replace("USERNAME", encodeURIComponent(this.player.name)), _.bind(this.onServerMessage, this), _.bind(this.onServerError, this));
     return this.network.connect().then(_.bind(function (network) {
-      network.send("ready");
       return this;
     }, this));
   },
 
-  chunkForPosition: function (p) {
-    return new Vec2(p.x % CHUNK_SIZE, p.y % CHUNK_SIZE);
-  },
-
-  syncChunkSubscription: function () {
-    var currentChunk = this.chunkForPosition(this.player.x, this.player.y);
-    this.network.send("subscribe_chunk", currentChunk);
-  },
-
   handles: {
     join: function (args, username) {
-      if (username !== this.player.name) {
-        console.log(args);
-        console.log(username, "connected");
+      if (username != this.player.name) {
         var player = new Player(username, "yellow");
-        player.x = args.x;
-        player.y = args.y;
+        player.move(Vec2.duck(args.position));
         this.players[username] = player;
       }
     },
     quit: function (a, username) {
-      console.log(username, "quit");
       delete this.players[username];
     },
     init: function (args) {
-      console.log("init", args);
-      this.player.syncPosition(args.position.x, args.position.y);
       for (var username in args.players) {
-        var p = args.players[username];
+        var playerData = args.players[username];
+        var position = Vec2.duck(playerData.position);
         var player = new Player(username, "yellow");
-        player.x = p.x;
-        player.y = p.y;
+        player.move(position);
+        player.score = playerData.score;
         this.players[username] = player;
       }
-      this.syncChunkSubscription();
     },
-    position: function (p, username) {
+    touched: function (username) {
       var player = this.playerByName(username);
-      if (!player) {
-        console.error("player "+username+" is unknown.");
-        return;
-      }
-      if (player === this.player) {
-        // FIXME
-      }
-      else {
-        player.syncPosition(p.x, p.y);
+      player.lastTouch = +new Date();
+    },
+    player: function (data, username) {
+      var position = Vec2.duck(data.position);
+      var player = this.playerByName(username);
+      player.score = data.score;
+      console.log(player.score);
+      if (this.player.name != username) {
+        player.move(position);
       }
     }
-  },
-
-  stopPlayer: function () {
-    this.player.stop();
-  },
-
-  movePlayer: function (angle) {
-    this.player.move(angle);
-    this.network.send("move", {x:this.player.x, y:this.player.y, angle: angle});
   },
 
   playerByName: function (name) {
@@ -96,21 +69,48 @@ Game.prototype = {
   },
 
   update: function (time, delta) {
-    this.player.update(time, delta);
+    var time = +new Date() - TOUCH_INTERVAL;
+    _.each(this.players, function (player) {
+      var lastTouch = player.lastTouch || 0;
+      if (lastTouch < time) {
+        player.color = "cyan";
+      }
+      else {
+        player.color = "yellow";
+      }
+    });
   },
 
-  render: function (ctx, camera) {
+  movePlayer: function (x, y) {
+    var self = this;
+    var W = window.innerWidth, H = window.innerHeight;
+    var player = this.player;
+    var p = new Vec2(x / W, y / H);
+    this.network.send("move", p);
+    player.move(p);
+    var size2 = player.size(); size2 *= size2;
+    var playerRealPosition = new Vec2(x, y);
+    _(this.players)
+      .filter(function (p) {
+        if (p.lastTouch >  +new Date() - TOUCH_INTERVAL) return false;
+        var realPosition = new Vec2(p.position.x*W, p.position.y*H);
+        return realPosition.dist2(playerRealPosition) < CIRCLE_DIST2*H*H;
+      })
+      .each(function (p) {
+        self.network.send("touch", p.name);
+      })
+      .value();
+  },
+
+  render: function (ctx) {
     var w = ctx.canvas.width, h = ctx.canvas.height;
     ctx.save();
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, w, h);
-    camera.applyContext(ctx);
-    _.each(this.tiles, function (tile) {
-    });
     ctx.restore();
     _.each(this.players, function (player) {
-      player.render(ctx, camera);
+      player.render(ctx);
     });
-    this.player.render(ctx, camera);
+    this.player.render(ctx);
   }
 };
