@@ -42,9 +42,9 @@ ROADMAP
 Bootstrap Server-side & Client-side:
 ------
  
-* [ ] Make Game()
+* [x] Make Game()
 * [ ] Make Player(x, y, angle, power)
-* [ ] Make basic Camera(player) & Renderer : defined a ratio and make it scalable to the page
+* [x] Make basic Camera(player) & Renderer : defined a ratio and make it scalable to the page
 * [ ] Make Chunk (x, y, w, h, tiles), a crop view of the world which contains tiles.
  
 Tile types:
@@ -56,9 +56,9 @@ Tile types:
 Game Features
 -----
 
-* [ ] player has an id, a name, a randomly affected color
-* [ ] player spawn at a spawn point (server send player position)
-* [ ] player can move (player send its position & angle, first version will override the position)
+* [ ] player has a name, a randomly affected color
+* [x] player spawn at a spawn point (server send player position)
+* [x] player can move (player send its position & angle, first version will override the position)
 * [ ] create new chunk on move + lazy loading game chunks
 * [ ] player collides with blocks (basic collision, "stop")
 * [ ] the spawn point area has some TileEmpty

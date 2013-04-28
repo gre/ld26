@@ -30,13 +30,7 @@ object Game {
       
       case Connected(enumerator) => 
         val iteratee = Iteratee.foreach[JsValue] { event =>
-          event match {
-            case JsArray(events) => events.map { e =>
-              default ! UserMessage(username, (e \ "k").as[String], e \ "m")
-            }
-            case e => 
-              default ! UserMessage(username, (e \ "k").as[String], e \ "m")
-          }
+          default ! UserMessage(username, (event \ "k").as[String], event \ "m")
         }.mapDone { _ =>
           default ! Quit(username)
         }
@@ -74,6 +68,10 @@ object Position {
 class Player (username: String, var position: Position, game: ActorRef, channel: Concurrent.Channel[JsValue]) extends Actor {
 
   def receive = {
+
+    case "getPosition" => {
+      sender ! position
+    }
 
     case m @ UserMessage(username, kind, msg) => {
       kind match {
@@ -182,6 +180,14 @@ class Game extends Actor {
 
   val seed = new Seed(0L)
 
+  def playerInfos: Future[Map[String, JsValue]] = {
+    Future.sequence(members.toList map { case (username, actor) =>
+      (actor ? "getPosition") map { case position: Position =>
+        (username, Json.toJson(position))
+      }
+    }).map(_.toMap)
+  }
+
   def receive = {
     
     case m @ UserMessage(username, kind, msg) => {
@@ -207,22 +213,25 @@ class Game extends Actor {
         sender ! CannotConnect("username_exists")
       } else {
         val position = seed.getSpawnPosition()
+        val gameInfosEnumerator: Enumerator[JsValue] = 
+          Enumerator.flatten(playerInfos map { playerInfos => 
+            Enumerator(Json.obj(
+              "k" -> "init",
+              "m" -> Json.obj(
+                "position" -> position,
+                "players" -> playerInfos
+              )
+            ))
+          })
         val playerEnumerator = Concurrent.unicast[JsValue] { playerChannel =>
           val player = Akka.system.actorOf(Props(new Player(username, position, self, playerChannel)))
           members = members + (username -> player)
         }
-        val gameInfosEnumerator: Enumerator[JsValue] = Enumerator(Json.obj(
-          "k" -> "init",
-          "m" -> Json.obj(
-            "position" -> position,
-            "players" -> Json.arr()
-          )
-        ))
         sender ! Connected(
           gameInfosEnumerator >>>  
           playerEnumerator >-
           gameEnumerator)
-        self ! NotifyJoin(username)
+        self ! NotifyJoin(username, position)
       }
     }
 
@@ -244,8 +253,8 @@ class Game extends Actor {
     case NewPosition(username, position) =>
       notifyAll("position", username, Json.toJson(position))
 
-    case NotifyJoin(username) =>
-      notifyAll("join", username, JsString(username))
+    case NotifyJoin(username, position) =>
+      notifyAll("join", username, Json.toJson(position))
     
     case Quit(username) => 
       members = members - username
@@ -273,7 +282,7 @@ case class Move (position: Position)
 case class NewPosition (username: String, position: Position)
 case class Join(username: String)
 case class Quit(username: String)
-case class NotifyJoin(username: String)
+case class NotifyJoin(username: String, position: Position)
 
 case class Connected(enumerator:Enumerator[JsValue])
 case class CannotConnect(msg: String)

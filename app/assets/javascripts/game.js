@@ -25,13 +25,44 @@ Game.prototype = {
   },
 
   handles: {
-    join: function () {},
+    join: function (args, username) {
+      if (username !== this.player.name) {
+        console.log(args);
+        console.log(username, "connected");
+        var player = new Player(username, "yellow");
+        player.x = args.x;
+        player.y = args.y;
+        this.players[username] = player;
+      }
+    },
+    quit: function (a, username) {
+      console.log(username, "quit");
+      delete this.players[username];
+    },
     init: function (args) {
+      console.log("init", args);
       this.player.syncPosition(args.position.x, args.position.y);
+      for (var username in args.players) {
+        var p = args.players[username];
+        var player = new Player(username, "yellow");
+        player.x = p.x;
+        player.y = p.y;
+        this.players[username] = player;
+      }
       this.syncChunkSubscription();
     },
     position: function (p, username) {
-      this.playerByName(username).syncPosition(p.x, p.y);
+      var player = this.playerByName(username);
+      if (!player) {
+        console.error("player "+username+" is unknown.");
+        return;
+      }
+      if (player === this.player) {
+        // FIXME
+      }
+      else {
+        player.syncPosition(p.x, p.y);
+      }
     }
   },
 
@@ -74,10 +105,12 @@ Game.prototype = {
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, w, h);
     camera.applyContext(ctx);
-    console.log(this.tiles);
     _.each(this.tiles, function (tile) {
     });
     ctx.restore();
+    _.each(this.players, function (player) {
+      player.render(ctx, camera);
+    });
     this.player.render(ctx, camera);
   }
 };

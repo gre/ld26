@@ -5,7 +5,6 @@ function Network (url, onMessage, onError) {
   this.pushRate = 100;
   this.eventHandler = onMessage;
   this.errorHandler = onError;
-  this.writeBuffer = _.throttle(_.bind(this._writeBuffer, this), this.pushRate);
 }
 
 Network.prototype = {
@@ -43,16 +42,9 @@ Network.prototype = {
     this.errorHandler(e.reason);
   },
 
-  _writeBuffer: function () {
-    var buffer = this.buffer;
-    this.buffer = [];
-    this.socket.send(JSON.stringify(buffer));
-  },
-
   send: function (kind, msg) {
     if (this.connected) {
-      this.buffer.push({ k: kind, m: msg });
-      this.writeBuffer();
+      this.socket.send(JSON.stringify({ k: kind, m: msg }));
     }
   }
 };
