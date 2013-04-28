@@ -18,7 +18,7 @@ import play.api.Play.current
 import play.api.libs.concurrent.Execution.Implicits._
 
 object Game {
-  val TOUCH_INTERVAL = 2000
+  val TOUCH_INTERVAL = 1500
   val CIRCLE_DIST = 0.05
   val CIRCLE_DIST2 = CIRCLE_DIST * CIRCLE_DIST
 

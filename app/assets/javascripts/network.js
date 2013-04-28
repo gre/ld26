@@ -10,12 +10,17 @@ function Network (url, onMessage, onError) {
 Network.prototype = {
   connect: function () {
     this.deferConnection = Q.defer();
-    this.socket = new WebSocket(this.url);
-    this.socket.onopen = _.bind(this.onopen, this); 
-    this.socket.onclose = _.bind(this.onclose, this);
-    this.socket.onmessage = _.bind(this.onmessage, this);
-    this.socket.onerror = _.bind(this.onerror, this);
     this.reconnectionDelay *= 1.5;
+    try {
+      this.socket = new WebSocket(this.url);
+      this.socket.onopen = _.bind(this.onopen, this); 
+      this.socket.onclose = _.bind(this.onclose, this);
+      this.socket.onmessage = _.bind(this.onmessage, this);
+      this.socket.onerror = _.bind(this.onerror, this);
+    }
+    catch (e) {
+      document.getElementById("unsupported").style.display = "block";
+    }
     return this.deferConnection.promise;
   },
   onopen: function (e) {

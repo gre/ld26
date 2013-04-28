@@ -4,6 +4,7 @@ html, body {
   background: #000;
   color: #fff;
   cursor: pointer;
+  font-family: 'Squada One';
 }
 
 * {
@@ -11,6 +12,13 @@ html, body {
   -webkit-user-select: none;
   -moz-user-select: none;
   user-select: none;
+}
+
+#viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
 #game {
@@ -21,9 +29,31 @@ html, body {
   left: 0;
 }
 
-#viewport {
+#message {
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
+  top: 40%;
+  font-size: 2em;
+  color: #fff;
+  z-index: 2;
+  text-align: center;
+  width: 100%;
+}
+
+#message #unsupported {
+  color: #f99;
+}
+
+#message .addthis_toolbox {
+  margin: 20px 1%;
+  position: absolute;
+  left: 45%;
+}
+
+footer {
+  width: 100%;
+  position: absolute;
+  z-index: 3;
+  opacity: 1;
+  text-align: center;
+  bottom: 5px;
 }

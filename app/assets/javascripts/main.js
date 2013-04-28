@@ -3,8 +3,7 @@
   var canvas = document.getElementById("viewport");
   var ctx = canvas.getContext("2d");
 
-  var username = /*prompt("What is your username?") ||*/ "p"+Math.random().toFixed(2).substring(2);
-  console.log("hello", username);
+  var username = /*prompt("What is your username?") ||*/ "p"+Math.random().toFixed(5).substring(2);
   var player = new Player(username);
 
   new Game(player).start().then(function (game) {
@@ -35,21 +34,12 @@
       var w = window.innerWidth, h = window.innerHeight;
       canvas.width = w;
       canvas.height = h;
+      document.body.style.fontSize = (h/800).toFixed(2)+"em";
     }
     resize();
     window.addEventListener("resize", resize, false);
 
     // User events
-
-    function angleForPosition (x, y) {
-      return Math.atan2(y, x);
-    }
-
-    function angleForRelativePosition (x, y) {
-      x -= window.innerWidth/2;
-      y -= window.innerHeight/2;
-      return angleForPosition(x, y);
-    }
 
     if ("ontouchstart" in document) {
       var currentTouch = null;
@@ -57,8 +47,7 @@
         e.preventDefault();
         if (currentTouch) return;
         var touch = currentTouch = e.changedTouches[0];
-        var angle = angleForRelativePosition(touch.clientX, touch.clientY);
-        game.movePlayer(angle);
+        game.movePlayer(touch.clientX, touch.clientY);
       });
       window.addEventListener("touchmove", function (e) {
         if (!currentTouch) return;

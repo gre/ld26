@@ -2,8 +2,32 @@
 
 @main {
 <div id="game">
+  
   <canvas id="viewport"></canvas>
+  <div id="message">
+    <div id="unsupported" style="display: none">
+      Something went wrong with your current browser.<br/>
+      Tested browsers are: Chrome, Firefox, Chrome Mobile. (WebSocket required)
+    </div>
+    <div id="alone" style="display: none">
+      This is a multiplayer game but you are currently alone.<br/>
+      Please invite your friends!<br/>
+
+      <!-- AddThis Button BEGIN -->
+      <div class="addthis_toolbox addthis_default_style addthis_32x32_style">
+        <a class="addthis_button_facebook"></a>
+        <a class="addthis_button_twitter"></a>
+        <a class="addthis_button_google_plusone_share"></a>
+      </div>
+      <script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=undefined"></script>
+      <!-- AddThis Button END -->
+    </div>
+  </div>
 </div>
+
+<footer>
+  @@greweb - 2013 - LD26 - Minimalism
+</footer>
 
 <div id="audios" style="display: none">
   <audio id="music" preload loop autoplay>
@@ -20,6 +44,7 @@
 </script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lodash.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/q.min.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/particle.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/rAF.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/utils.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/network.js")"></script>
